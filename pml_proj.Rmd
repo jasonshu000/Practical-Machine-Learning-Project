@@ -1,0 +1,100 @@
+---
+title: "Practical Machine Learning project"
+author: "Jason Shu"
+date: "September 24, 2015"
+output: html_document
+---
+
+## Loading the data
+
+First, we need to load the libraries and the data. (Converting blank entries into NA makes it easier to get rid of them.)
+
+```{r}
+library(caret)
+library(rpart)
+library(randomForest)
+test<-read.csv("pml-testing.csv",na.strings=c("NA",""))
+training<-read.csv("pml-training.csv",na.strings=c("NA",""))
+```
+
+## Cleaning and partitioning
+
+Next, split the training data into training and cross-validation sets. I decided to go with a 75%/25% split. 
+
+```{r}
+temp<-createDataPartition(y=training$classe, p=0.75, list=FALSE)
+train<-training[temp,]
+valid<-training[-temp,]
+```
+
+There is a lot of NA's in the data. I got rid of all the columns with more than 50% NA's. Note that every column has either no NA's or almost all NA's, so the exact percentage doesn't matter. We also apply the same transformation to the cross-validation and test sets. 
+
+```{r}
+temp2<-colSums(is.na(train))<0.5*nrow(train)
+train<-train[,temp2]
+valid<-valid[,temp2]
+test<-test[,temp2]
+```
+
+The first column is just an ID and doesn't contain "real" data, so we want to get rid of it, to prevent it from interfering with the prediction algorithms. 
+
+```{r}
+train<-train[-1]
+valid<-valid[-1]
+test<-test[-1]
+```
+
+## Training the models
+
+There are a lot of machine learning algorithms that can be used for this problem. I decided to go with decision trees and random forests.  
+
+First, we try decision trees. The first step is to train the model. 
+
+```{r}
+model1<-train(classe ~ .,method="rpart",data=train)
+```
+
+Then we apply it to the cross-validation set. 
+
+```{r}
+predictions1<-predict(model1,newdata=valid)
+```
+
+Look at the confusion matrix to see the out-of-sample error, and how good the model is: 
+
+```{r}
+confusionMatrix(predictions1,valid$classe)
+```
+
+Next, we repeat the same process for random forests. (I needed to adjust the options so that the computation doesn't take forever.)
+
+```{r}
+fitControl<-trainControl(method="none")
+tgrid<-expand.grid(mtry=c(6))
+model2<-train(classe ~ .,method="rf",data=train,trControl=fitControl,tuneGrid=tgrid)
+predictions2<-predict(model2,newdata=valid)
+confusionMatrix(predictions2,valid$classe)
+```
+
+It should be apparent from the results that decision trees's accuracy is not very impressive, whereas random forests's accuracy is almost perfect. 
+
+## Prediction
+
+The final step is to use the trained model to generate predictions for the test set. Because random forests performed much better on the validation set, I will be using that. Because of the model's almost perfect accuracy on data is has never seen before, I can expect it to get all of the test cases correct, unless there's something different about the test set that I'm not aware of (which there shouldn't be).
+
+```{r}
+answers<-predict(model2,newdata=test)
+```
+
+Use the code provided by the instructors to create the files for the submission part of this project:
+
+```{r,eval=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
